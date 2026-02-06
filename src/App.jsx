@@ -96,46 +96,48 @@ const App = () => {
     }
   };
 
-  const generateImage = async (prompt, index) => {
-  const newLoadingStates = [...isGeneratingImages];
-  newLoadingStates[index] = true;
-  setIsGeneratingImages([...newLoadingStates]);
+  cconst generateImage = async (prompt, index) => {
+    // 1. تشغيل حالة التحميل للصورة المطلوبة فقط
+    setIsGeneratingImages(prev => {
+      const updated = [...prev];
+      updated[index] = true;
+      return updated;
+    });
 
-  // نضيف لمسات احترافية للبرومبت لضمان جودة اللوجو
-  const professionalPrompt = `${prompt}, professional logo, vector art, clean lines, flat design, white background, high quality, 4k`;
-  
-  // تحويل النص لرابط صالح (URL Safe)
-  const encodedPrompt = encodeURIComponent(professionalPrompt);
-  
-  // إنشاء الرابط مع إضافة seed عشوائي لمنع المتصفح من كاش الصورة القديمة
-  const randomSeed = Math.floor(Math.random() * 1000000);
-  const imageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=512&height=512&nologo=true&seed=${randomSeed}`;
+    try {
+      // 2. تجهيز الوصف (Prompt) وإضافة لمسات التصميم
+      const professionalPrompt = `${prompt}, professional vector logo, flat design, white background, high resolution, minimalist`;
+      const encodedPrompt = encodeURIComponent(professionalPrompt);
+      
+      // 3. إنشاء رابط Pollinations (بدون الحاجة لـ API Key)
+      const randomSeed = Math.floor(Math.random() * 1000000);
+      const imageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=512&height=512&nologo=true&seed=${randomSeed}`;
 
-  try {
-    // هنا نقوم بعمل "Pre-load" للصورة لنتأكد أنها جاهزة قبل عرضها
-    const img = new Image();
-    img.src = imageUrl;
-    img.onload = () => {
+      // 4. تحديث الرابط فوراً في المصفوفة
       setImages(prev => {
         const updated = [...prev];
         updated[index] = imageUrl;
         return updated;
       });
+
+      // 5. محاكاة انتظار بسيط لضمان أن المتصفح بدأ بطلب الصورة ثم إيقاف حالة التحميل
+      setTimeout(() => {
+        setIsGeneratingImages(prev => {
+          const updated = [...prev];
+          updated[index] = false;
+          return updated;
+        });
+      }, 1000); // ننتظر ثانية واحدة فقط ليظهر الـ Placeholder ثم الصورة
+
+    } catch (err) {
+      console.error("Image generation error:", err);
       setIsGeneratingImages(prev => {
         const updated = [...prev];
         updated[index] = false;
         return updated;
       });
-    };
-  } catch (err) {
-    console.error("Image generation error:", err);
-    setIsGeneratingImages(prev => {
-      const updated = [...prev];
-      updated[index] = false;
-      return updated;
-    });
-  }
-};
+    }
+  };
 
   const handleCopy = (text, idx) => {
     const textArea = document.createElement("textarea");
