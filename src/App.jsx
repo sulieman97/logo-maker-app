@@ -26,33 +26,36 @@ const App = () => {
     setResults(null);
     setImages([null, null]);
 
-    // البرومبت الخاص بتحليل الشعار
-    const analysisPrompt = `
-      You are a professional logo designer. 
-      Project Name: "${projectName}"
-      Description: "${inputText}"
-      Task: Create 2 distinct logo design prompts for an AI image generator.
-      Return ONLY a valid JSON object (no markdown, no backticks):
-      {
-        "concept_summary": "Short Arabic summary of the idea",
-        "variants": [
-          {"id": 1, "title": "تصميم عصري", "prompt": "Professional minimalist logo for ${projectName}, vector, clean, white background"},
-          {"id": 2, "title": "تصميم إبداعي", "prompt": "Creative artistic logo for ${projectName}, elegant, high quality, white background"}
-        ]
-      }
-    `;
+    // صياغة السؤال بشكل مركز
+    const promptForAI = `Create 2 logo prompts for "${projectName}" based on: "${inputText}". Return ONLY JSON: {"concept_summary": "Arabic", "variants": [{"id":1, "title":"Arabic", "prompt":"English"}, {"id":2, "title":"Arabic", "prompt":"English"}]}`;
+
+    // تحويل السؤال إلى صيغة آمنة للروابط
+    const encodedPrompt = encodeURIComponent(promptForAI);
+    
+    // استخدام GET بدلاً من POST لتجنب خطأ CORS
+    const url = `https://text.pollinations.ai/${encodedPrompt}?model=openai&json=true`;
 
     try {
-      // استخدام Pollinations لتوليد النصوص (بديل Gemini)
-      const response = await fetch('https://text.pollinations.ai/', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          messages: [{ role: 'user', content: analysisPrompt }],
-          model: 'openai', // موديل قوي وسريع ومجاني هنا
-          jsonMode: true
-        })
+      const response = await fetch(url);
+      if (!response.ok) throw new Error('Network response was not ok');
+      
+      const text = await response.text();
+      // تنظيف النص من أي علامات Markdown
+      const cleanJson = text.replace(/```json|```/g, "").trim();
+      const content = JSON.parse(cleanJson);
+      
+      setResults(content);
+      
+      content.variants.forEach((variant, index) => {
+        generateImage(variant.prompt, index);
       });
+    } catch (err) {
+      setError("فشل في جلب البيانات، يرجى المحاولة مرة أخرى.");
+      console.error(err);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
 
       const text = await response.text();
       // تنظيف النص في حال وجود علامات markdown
