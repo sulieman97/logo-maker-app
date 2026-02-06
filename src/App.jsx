@@ -51,6 +51,9 @@ const App = () => {
     setResults(null);
     setImages([null, null]);
 
+    // التعديل الجوهري هنا: استخدام موديل gemini-1.5-flash المستقر والمجاني
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+
     const analysisPrompt = `
       Project Name: "${projectName}"
       Visual Identity Description: "${inputText}"
@@ -73,14 +76,35 @@ const App = () => {
     `;
 
     try {
-      const data = await fetchWithRetry(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+      const data = await fetchWithRetry(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contents: [{ parts: [{ text: analysisPrompt }] }],
-          generationConfig: { responseMimeType: "application/json" }
+          generationConfig: { 
+            responseMimeType: "application/json" 
+          }
         })
       });
+
+      // التحقق من وجود بيانات قبل التحليل
+      if (data && data.candidates && data.candidates[0].content.parts[0].text) {
+        const content = JSON.parse(data.candidates[0].content.parts[0].text);
+        setResults(content);
+        
+        // البدء بتوليد الصور فوراً باستخدام البرومبتات الناتجة
+        content.variants.forEach((variant, index) => {
+          generateImage(variant.prompt, index);
+        });
+      } else {
+        throw new Error("Invalid response format from Gemini");
+      }
+
+    } catch (err) {
+      setError("فشل في معالجة البيانات. تأكد من أن مفتاح الـ API صحيح وأن الموديل متاح.");
+      console.error("Gemini Error:", err);
+    } finally {
+      setIsGenerating(false
 
       const content = JSON.parse(data.candidates[0].content.parts[0].text);
       setResults(content);
