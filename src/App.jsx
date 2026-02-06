@@ -46,7 +46,7 @@ const App = () => {
     setImages([null, null]);
 
     // الرابط المحدث لموديل Gemini 2.0 Flash Experimental
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${apiKey}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
 
     const analysisPrompt = `
       Project Name: "${projectName}"
