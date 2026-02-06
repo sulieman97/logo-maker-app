@@ -46,7 +46,6 @@ const App = () => {
     setResults(null);
     setImages([null, null]);
 
-    // أضفنا كلمة "json" بشكل صريح داخل البرومبت لتفادي خطأ 400
     const analysisPrompt = `
       Return a JSON object for a logo design project.
       Project Name: "${projectName}"
@@ -72,8 +71,6 @@ const App = () => {
         body: JSON.stringify({
           contents: [{ parts: [{ text: analysisPrompt }] }],
           generationConfig: { 
-            // قمنا بإزالة responseMimeType مؤقتاً إذا كان يسبب تعارضاً في حسابك
-            // وسنقوم بتنظيف النص يدوياً لضمان أعلى استقرار
             temperature: 0.7,
             topK: 40,
             topP: 0.95,
@@ -82,7 +79,6 @@ const App = () => {
       });
 
       let contentText = data.candidates[0].content.parts[0].text;
-      // تنظيف النص من علامات الـ markdown لضمان تحويله لـ JSON
       const cleanJson = contentText.replace(/```json|```/g, "").trim();
       const content = JSON.parse(cleanJson);
       
@@ -99,6 +95,7 @@ const App = () => {
     }
   };
 
+  // دالة محسّنة لتوليد الصور مع خيارات احتياطية متعددة
   const generateImage = async (prompt, index) => {
     setIsGeneratingImages(prev => {
       const updated = [...prev];
@@ -108,22 +105,101 @@ const App = () => {
 
     try {
       const seed = Math.floor(Math.random() * 1000000);
-      // استخدام محرك Pollinations للصور لضمان عدم استهلاك الكوتا وتجنب التعقيد
-      const imageUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=1024&height=1024&nologo=true&seed=${seed}`;
+      const timestamp = Date.now();
       
+      // قائمة بـ APIs مجانية مع ترتيب الأولوية
+      const imageAPIs = [
+        // 1. Pollinations AI - الأسرع والأكثر استقرارًا
+        {
+          name: 'Pollinations',
+          url: `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=1024&height=1024&nologo=true&seed=${seed}&enhance=true`
+        },
+        // 2. Picsum Photos مع overlay نصي (للتجربة)
+        {
+          name: 'Placeholder',
+          url: `https://placehold.co/1024x1024/4f46e5/white?text=${encodeURIComponent(projectName.substring(0, 10))}&font=roboto`
+        },
+        // 3. DiceBear API لشعارات مجردة
+        {
+          name: 'DiceBear',
+          url: `https://api.dicebear.com/7.x/shapes/svg?seed=${encodeURIComponent(projectName + index)}&backgroundColor=4f46e5,818cf8,c7d2fe&size=1024`
+        }
+      ];
+
+      // محاولة كل API بالترتيب حتى ينجح واحد
+      let imageUrl = null;
+      let lastError = null;
+
+      for (const api of imageAPIs) {
+        try {
+          console.log(`Trying ${api.name} API...`);
+          
+          // اختبار الصورة بطلب HEAD أولاً
+          const testResponse = await fetch(api.url, { method: 'HEAD' });
+          
+          if (testResponse.ok) {
+            imageUrl = `${api.url}&t=${timestamp}`; // إضافة timestamp لتجنب الكاش
+            console.log(`✓ ${api.name} succeeded`);
+            break;
+          }
+        } catch (err) {
+          lastError = err;
+          console.warn(`✗ ${api.name} failed:`, err.message);
+          continue;
+        }
+      }
+
+      if (imageUrl) {
+        // التحقق من تحميل الصورة فعلياً
+        const img = new Image();
+        img.onload = () => {
+          setImages(prev => {
+            const updated = [...prev];
+            updated[index] = imageUrl;
+            return updated;
+          });
+        };
+        img.onerror = () => {
+          console.error('Image failed to load');
+          // استخدام صورة احتياطية نهائية
+          setImages(prev => {
+            const updated = [...prev];
+            updated[index] = `https://ui-avatars.com/api/?name=${encodeURIComponent(projectName)}&size=1024&background=4f46e5&color=fff&bold=true&font-size=0.4`;
+            return updated;
+          });
+        };
+        img.src = imageUrl;
+      } else {
+        throw new Error('All image APIs failed');
+      }
+
+    } catch (err) {
+      console.error(`Image generation failed for index ${index}:`, err);
+      
+      // صورة احتياطية نهائية باستخدام UI Avatars
       setImages(prev => {
         const updated = [...prev];
-        updated[index] = imageUrl;
+        updated[index] = `https://ui-avatars.com/api/?name=${encodeURIComponent(projectName + ' ' + (index + 1))}&size=1024&background=${index === 0 ? '4f46e5' : '818cf8'}&color=fff&bold=true&font-size=0.33`;
         return updated;
       });
-    } catch (err) {
-      console.error(`Image generation failed:`, err);
     } finally {
       setIsGeneratingImages(prev => {
         const updated = [...prev];
         updated[index] = false;
         return updated;
       });
+    }
+  };
+
+  // دالة لإعادة توليد صورة معينة
+  const regenerateImage = (index) => {
+    if (results && results.variants[index]) {
+      setImages(prev => {
+        const updated = [...prev];
+        updated[index] = null;
+        return updated;
+      });
+      generateImage(results.variants[index].prompt, index);
     }
   };
 
@@ -161,7 +237,10 @@ const App = () => {
                 value={inputText}
                 onChange={(e) => setInputText(e.target.value)}
               />
-              {error && <div className="p-3 bg-red-50 text-red-600 rounded-xl text-[10px] animate-bounce">{error}</div>}
+              {error && <div className="p-3 bg-red-50 text-red-600 rounded-xl text-[10px] animate-bounce flex items-center gap-2">
+                <AlertCircle className="w-4 h-4" />
+                {error}
+              </div>}
               <button 
                 onClick={analyzeAndGenerate}
                 disabled={isGenerating}
@@ -181,7 +260,7 @@ const App = () => {
               {results.colors.map((c, i) => (
                 <div key={i} className="flex items-center justify-between bg-white/5 p-3 rounded-xl border border-white/10 mb-2">
                   <div className="flex items-center gap-3">
-                    <div className="w-6 h-6 rounded-md" style={{backgroundColor: c.hex}} />
+                    <div className="w-6 h-6 rounded-md shadow-lg" style={{backgroundColor: c.hex}} />
                     <span className="text-[10px] font-bold">{c.name}</span>
                   </div>
                   <code className="text-[10px] text-indigo-300">{c.hex}</code>
@@ -201,9 +280,29 @@ const App = () => {
                 </div>
                 <div className="aspect-square bg-slate-50 rounded-[2.5rem] overflow-hidden mb-5 flex items-center justify-center relative shadow-inner border border-slate-100">
                   {isGeneratingImages[idx] ? (
-                    <RefreshCw className="w-10 h-10 text-indigo-500 animate-spin" />
+                    <div className="flex flex-col items-center gap-3">
+                      <RefreshCw className="w-10 h-10 text-indigo-500 animate-spin" />
+                      <span className="text-[10px] text-slate-400 font-bold">جاري التوليد...</span>
+                    </div>
                   ) : images[idx] ? (
-                    <img src={images[idx]} className="w-full h-full object-contain p-6 animate-in fade-in duration-1000" alt="Logo" />
+                    <>
+                      <img 
+                        src={images[idx]} 
+                        className="w-full h-full object-contain p-6 animate-in fade-in duration-1000" 
+                        alt="Logo"
+                        onError={(e) => {
+                          console.error('Image load error, using fallback');
+                          e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(projectName)}&size=1024&background=4f46e5&color=fff&bold=true`;
+                        }}
+                      />
+                      <button
+                        onClick={() => regenerateImage(idx)}
+                        className="absolute top-4 left-4 bg-white/90 backdrop-blur-sm p-2 rounded-xl shadow-lg hover:bg-indigo-600 hover:text-white transition-all"
+                        title="إعادة التوليد"
+                      >
+                        <RefreshCw className="w-4 h-4" />
+                      </button>
+                    </>
                   ) : (
                     <ImageIcon className="w-16 h-16 opacity-5" />
                   )}
