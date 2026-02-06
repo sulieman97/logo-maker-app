@@ -14,7 +14,7 @@ import {
   Crown
 } from 'lucide-react';
 
-const apiKey = ""; 
+console.log("Current API Key:", apiKey);
 
 const App = () => {
   const [projectName, setProjectName] = useState('');
