@@ -40,6 +40,11 @@ const App = () => {
       setError("يرجى إدخال اسم المشروع ووصف الشعار.");
       return;
     }
+
+    if (!apiKey || apiKey.trim() === "") {
+      setError("❌ لم يتم إيجاد API Key. يرجى إضافته في ملف .env كـ VITE_GEMINI_API_KEY");
+      return;
+    }
     
     setIsGenerating(true);
     setError(null);
@@ -62,7 +67,8 @@ const App = () => {
       }
     `;
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+    // استخدام v1 بدلاً من v1beta والنموذج الصحيح
+    const url = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;
 
     try {
       const data = await fetchWithRetry(url, {
@@ -88,8 +94,18 @@ const App = () => {
         generateImage(variant.prompt, index);
       });
     } catch (err) {
-      setError("حدث خطأ في الطلب. تأكد من إعدادات الـ API Key.");
-      console.error(err);
+      console.error("Full error:", err);
+      
+      // رسائل خطأ محددة حسب نوع المشكلة
+      if (err.message.includes('404')) {
+        setError("❌ خطأ 404: تحقق من صحة API Key أو قم بتفعيله في Google AI Studio");
+      } else if (err.message.includes('403')) {
+        setError("❌ خطأ 403: API Key غير مصرح به أو منتهي الصلاحية");
+      } else if (err.message.includes('429')) {
+        setError("⏳ تجاوزت الحد المسموح. انتظر قليلاً وحاول مرة أخرى");
+      } else {
+        setError("❌ حدث خطأ في الاتصال. تحقق من الإنترنت و API Key");
+      }
     } finally {
       setIsGenerating(false);
     }
