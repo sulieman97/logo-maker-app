@@ -11,11 +11,9 @@ import {
   Sparkles,
   AlertCircle,
   Hash,
-  Crown
+  Crown,
+  Shield
 } from 'lucide-react';
-
-// استخدم متغير البيئة من Vercel
-const apiKey = import.meta.env.VITE_GEMINI_API_KEY || ""; 
 
 const App = () => {
   const [projectName, setProjectName] = useState('');
@@ -27,33 +25,9 @@ const App = () => {
   const [error, setError] = useState(null);
   const [copySuccess, setCopySuccess] = useState(null);
 
-  const fetchWithRetry = async (url, options, retries = 3, backoff = 1000) => {
-    try {
-      const response = await fetch(url, options);
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        console.error("API Error:", errorData);
-        throw new Error(`HTTP ${response.status}: ${errorData.error?.message || 'Unknown error'}`);
-      }
-      return await response.json();
-    } catch (err) {
-      if (retries > 0 && !err.message.includes('403')) {
-        console.log(`Retrying... (${retries} attempts left)`);
-        await new Promise(resolve => setTimeout(resolve, backoff));
-        return fetchWithRetry(url, options, retries - 1, backoff * 2);
-      }
-      throw err;
-    }
-  };
-
   const analyzeAndGenerate = async () => {
     if (!inputText.trim() || !projectName.trim()) {
       setError("يرجى إدخال اسم المشروع بالإنجليزية ووصف الشعار.");
-      return;
-    }
-
-    if (!apiKey || apiKey.trim() === "") {
-      setError("❌ API Key مفقود! أضفه في Environment Variables على Vercel");
       return;
     }
     
@@ -62,62 +36,39 @@ const App = () => {
     setResults(null);
     setImages([null, null]);
 
-    const analysisPrompt = `
-      Project Name: "${projectName}"
-      Visual Identity Description: "${inputText}"
-
-      Task: 
-      1. Translate the description to professional English design terminology.
-      2. Create ONLY 2 distinct logo design prompts. 
-      3. Each prompt MUST include the text "${projectName}" as the primary brand name.
-      4. Variation: Style 1 (Minimalist & Modern), Style 2 (Creative & Luxurious).
-
-      Return ONLY a JSON object:
-      {
-        "concept_summary": "Short Arabic summary",
-        "variants": [
-          {"id": 1, "title": "تصميم عصري بسيط", "prompt": "Professional minimalist logo for '${projectName}', clean lines, white background, vector style"},
-          {"id": 2, "title": "تصميم إبداعي فاخر", "prompt": "Luxurious creative logo for '${projectName}', elegant details, high contrast, white background, premium design"}
-        ],
-        "colors": [{"name": "اللون الأساسي", "hex": "#4f46e5"}]
-      }
-    `;
-
     try {
-      // استخدام gemini-2.0-flash-exp (الأحدث والمتاح للجميع)
-      const data = await fetchWithRetry(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${apiKey}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: analysisPrompt }] }],
-            generationConfig: { 
-              responseMimeType: "application/json",
-              temperature: 0.8,
-              topK: 40,
-              topP: 0.95
-            }
-          })
-        }
-      );
+      // استدعاء Backend API بدلاً من Gemini مباشرة
+      const response = await fetch('/api/generate-analysis', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          projectName,
+          inputText
+        })
+      });
 
-      const content = JSON.parse(data.candidates[0].content.parts[0].text);
+      if (!response.ok) {
+        const errorData = await response.json();
+        
+        if (response.status === 429) {
+          setError("⏳ تجاوزت الحد المسموح. انتظر دقيقة وحاول مرة أخرى");
+        } else {
+          setError(errorData.message || "❌ فشل في التحليل");
+        }
+        return;
+      }
+
+      const content = await response.json();
       setResults(content);
       
-      // توليد الصور بالتوازي
+      // توليد الصور
       content.variants.forEach((variant, index) => {
         generateImage(variant.prompt, index);
       });
+
     } catch (err) {
       console.error("Analysis error:", err);
-      if (err.message.includes('403')) {
-        setError("❌ API Key غير صالح أو منتهي. احصل على واحد جديد من Google AI Studio");
-      } else if (err.message.includes('404')) {
-        setError("❌ النموذج غير متاح. تأكد من تفعيل Gemini API في حسابك");
-      } else {
-        setError("❌ فشل التحليل. تحقق من الاتصال بالإنترنت");
-      }
+      setError("❌ فشل في الاتصال بالخادم. تحقق من اتصال الإنترنت");
     } finally {
       setIsGenerating(false);
     }
@@ -131,63 +82,34 @@ const App = () => {
     });
 
     try {
-      // استخدام imagen-3.0-generate-001 (Gemini Image Generation)
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-001:predict?key=${apiKey}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            instances: [{
-              prompt: prompt
-            }],
-            parameters: {
-              sampleCount: 1,
-              aspectRatio: "1:1",
-              negativePrompt: "blurry, low quality, distorted, watermark",
-              safetySetting: "block_some"
-            }
-          })
-        }
-      );
+      // استدعاء Backend API للصور
+      const response = await fetch('/api/generate-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt })
+      });
 
       if (!response.ok) {
-        console.warn(`Image API returned ${response.status}, trying alternative...`);
         throw new Error(`Image generation failed: ${response.status}`);
       }
 
       const data = await response.json();
       
-      // محاولة استخراج الصورة من الاستجابة
-      let base64 = null;
-      
-      if (data.predictions && data.predictions[0]) {
-        base64 = data.predictions[0].bytesBase64Encoded;
-      } else if (data.candidates && data.candidates[0]) {
-        const inlineData = data.candidates[0].content?.parts?.find(p => p.inlineData);
-        base64 = inlineData?.inlineData?.data;
-      }
-
-      if (base64) {
-        setImages(prev => {
-          const updated = [...prev];
-          updated[index] = `data:image/png;base64,${base64}`;
-          return updated;
-        });
-      } else {
-        throw new Error("No image data in response");
-      }
-
-    } catch (err) {
-      console.error(`Image ${index} generation failed, using fallback:`, err);
-      
-      // استخدام Pollinations كخيار احتياطي مجاني
-      const seed = Math.floor(Math.random() * 1000000);
-      const fallbackUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=1024&height=1024&nologo=true&seed=${seed}&enhance=true&model=flux`;
-      
       setImages(prev => {
         const updated = [...prev];
-        updated[index] = fallbackUrl;
+        updated[index] = data.image;
+        return updated;
+      });
+
+      console.log(`Image ${index} generated using: ${data.source}`);
+
+    } catch (err) {
+      console.error(`Image ${index} failed:`, err);
+      
+      // صورة احتياطية نهائية
+      setImages(prev => {
+        const updated = [...prev];
+        updated[index] = `https://ui-avatars.com/api/?name=${encodeURIComponent(projectName)}&size=1024&background=${index === 0 ? '4f46e5' : '818cf8'}&color=fff&bold=true&font-size=0.33`;
         return updated;
       });
       
@@ -215,8 +137,7 @@ const App = () => {
     navigator.clipboard.writeText(text).then(() => {
       setCopySuccess(idx);
       setTimeout(() => setCopySuccess(null), 2000);
-    }).catch(err => {
-      console.error('Copy failed:', err);
+    }).catch(() => {
       // Fallback للمتصفحات القديمة
       const textArea = document.createElement("textarea");
       textArea.value = text;
@@ -227,7 +148,7 @@ const App = () => {
         setCopySuccess(idx);
         setTimeout(() => setCopySuccess(null), 2000);
       } catch (e) {
-        console.error('Fallback copy failed', e);
+        console.error('Copy failed');
       }
       document.body.removeChild(textArea);
     });
@@ -243,7 +164,13 @@ const App = () => {
         <h1 className="text-4xl md:text-5xl font-black mb-3 text-slate-900">
           مختبر التصميم <span className="text-indigo-600">الثنائي</span>
         </h1>
-        <p className="text-slate-500">توليد نموذجين احترافيين لهويتك البصرية في ثوانٍ</p>
+        <p className="text-slate-500 mb-2">توليد نموذجين احترافيين لهويتك البصرية في ثوانٍ</p>
+        
+        {/* شارة الأمان */}
+        <div className="inline-flex items-center gap-2 bg-green-50 text-green-700 px-3 py-1.5 rounded-full text-[10px] font-bold">
+          <Shield className="w-3 h-3" />
+          <span>مُحمي بنظام Backend Proxy • API Key مخفي تماماً</span>
+        </div>
       </header>
 
       <main className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-8">
@@ -382,7 +309,7 @@ const App = () => {
                     Professional Identity Lab
                   </span>
                   <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1">
-                    Visual Engineering v2.0
+                    Visual Engineering v2.0 • Secure Backend
                   </span>
                 </div>
             </div>
