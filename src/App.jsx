@@ -120,7 +120,7 @@ const App = () => {
     }
   };
 
-  cconst generateImage = async (prompt, index) => {
+  const generateImage = async (prompt, index) => {
     // 1. تشغيل حالة التحميل للصورة المطلوبة فقط
     setIsGeneratingImages(prev => {
       const updated = [...prev];
